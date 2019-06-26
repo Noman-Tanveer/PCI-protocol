@@ -1,0 +1,230 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date:    17:30:08 06/21/2019 
+// Design Name: 
+// Module Name:    PCI_Master 
+// Project Name: 
+// Target Devices: 
+// Tool versions: 
+// Description: 
+//
+// Dependencies: 
+//
+// Revision: 
+// Revision 0.01 - File Created
+// Additional Comments: 
+//
+//////////////////////////////////////////////////////////////////////////////////
+
+`define HIGH 1'b1
+`define LOW 1'b0
+
+`define TRUE 1'b1
+`define FALSE 1'b0
+
+`timescale 1ns / 1ps
+
+
+
+module PCI_Master_Card (AD, CBE, PAR, FRM_LA, TRDY_LA, IRDY_LA, STOP_LA, DEVSEL_LA, IDSEL, PERR, SERR, REQ_LA, 
+GNT_LA, CLK, RST_LA, INTA_LA, INTB_LA, INTC_LA, INTD_LA, LOCK_LA);
+
+input CLK;         //Standard PCI signals
+inout AD [31:0];
+output reg CBE [3:0];
+output PAR;
+output reg FRAME_LA = 1'b1;
+output TRDY_LA;
+output reg IRDY_LA = 1'b1;
+input STOP_LA;
+output DRVSEL_LA;
+output IDSEL;
+output PERR_LA;
+output SERR_LA;
+output REQ_LA;
+input GNT_LA;
+input RST_LA;
+input INTA_LA;
+input INTB_LA;
+input INTC_LA;
+input INTD_LA;
+output LOCK_LA;
+
+input reg [3:0] command;
+input reg [31:0] address;
+input reg [31:0] data;
+input reg [3:0] byteselect;
+
+parameter READ = 4'b0010;
+parameter WRITE = 4'b0011;
+
+parameter address_phase = 4'b0000;
+parameter device_select = 4'b0001;
+parameter cycle_identification = 4'b1010;
+parameter read_cycle = 4'b0011;
+parameter write_cycle = 4'b0100;
+parameter end_cycle = 4'b0101;
+
+reg state;
+
+
+always@(posedge CLK)
+begin
+case (state)
+address_phase:
+
+if ((REQ_LA == 1'b1) && (GNT_LA == 1'b0) && (FRAME_LA ==1'b1))
+begin
+	FRAME_LA = 1'b0;
+	CBE = command;
+	AD = address;
+	state = device_select;
+	end
+else
+	begin
+	command = command;
+	address = address;
+	state = address_phase;
+	end
+
+device_select:
+
+if (DEV_SEL == 1'b0)
+	
+	state = cycle_identification;
+	
+else
+
+	state = device_select;
+	
+cycle_identification:
+
+if (command == 4'b0010)
+begin
+	state = read_cycle;
+	IRDY_LA = 1'b0;
+	end
+else if (command == 4'b0011)
+	begin
+	state = write_cycle;
+	IRDY_LA = 1'b0;
+	end
+else state = cycle_identification;
+	
+read_cycle:
+	
+if ((IRDY_LA == 1'b1) && (DEVSEL_LA == 1'b0) && (TRDY_LA == 1'b0))
+	begin
+	data <= AD;					// Check parity here
+	byteselect <= CBE;
+	
+	case (byteselect)
+	
+	4'b0000:
+	begin
+	data = 32'bZ;
+	end
+	
+	4'b0001:
+	begin
+	data = data [7:0];
+	end
+	
+	4'b0010:
+	begin
+	data = data [15:8];
+	end
+	
+	4'b0011:
+	begin
+	data = {data [15:8],data [7:0]};
+	end
+	
+	4'b0100:
+	begin
+	data = data [23:16];
+	end
+	
+	4'b0101:
+	begin
+	data = {data [23:16],data [7:0]};
+	end
+	
+	4'b0110:
+	begin
+	data = {data [23:16],data [15:8]};
+	end
+	
+	4'b0111:
+	begin
+	data = {data [23:16],data [15:8],data [7:0]};
+	end
+	
+	4'b1000:
+	begin
+	data = data [31:24];
+	end
+	
+	4'b1001:
+	begin
+	data<= {data [31:24],data [7:0]};
+	end
+	
+	4'b1010:
+	begin
+	data<= {data [31:24],data [15:8]};
+	end
+	
+	4'b1011:
+	begin
+	data<= {data [31:24],data [15:8],data [7:0]};
+	end
+	
+	4'b1100:
+	begin
+	data<= {data [31:24],data [23:16]};
+	end
+	
+	4'b1101:
+	begin
+	data<= {data [31:24],data [23:16],data [7:0]};
+	end
+	
+	4'b1110:
+	begin
+	data [23:0]<= {data [31:24],data [23:16],data [15:8]};
+	end
+	
+	4'b1111:
+	begin
+	data<= {data [31:24],data [23:16],data [15:8],data [7:0]};
+	end
+	endcase
+	end
+	
+	else
+	begin
+	data <= data;
+	state <= read_cycle;
+	end
+
+write_cycle:
+begin
+	FRAME_LA = 1'b0;
+	AD = data;
+	CBE = byteselect;
+
+end
+
+end_cycle:
+	begin
+	FRAME_LA = 1'b1;
+	state = end_cycle;
+	end
+endcase
+end
+endmodule
+
