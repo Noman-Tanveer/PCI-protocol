@@ -1,0 +1,47 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date:    10:34:26 06/24/2019 
+// Design Name: 
+// Module Name:    DPRAM 
+// Project Name: 
+// Target Devices: 
+// Tool versions: 
+// Description: 
+//
+// Dependencies: 
+//
+// Revision: 
+// Revision 0.01 - File Created
+// Additional Comments: 
+//
+//////////////////////////////////////////////////////////////////////////////////
+
+`timescale 1ns / 1ps
+
+module dual_port_ram 
+    (   input CLK, //clock
+        input wr_en,    //write enable for port 0
+        input [31:0] data_in,    //Input data to port 0.
+        input [15:0] addr_in,  //address for port 0
+        input port_en,    //enable port 0.
+        output [31:0] data_out    //output data from port 0.
+		  );
+
+//memory declaration.
+reg [31:0] ram[0:65534];
+
+//writing to the RAM
+always@(posedge CLK)
+begin
+    if(port_en == 1 && wr_en == 1)    //check enable signal and if write enable is ON
+        ram[addr_in] <= data_in;
+end
+
+//always reading from the ram, irrespective of clock.
+assign data_out = port_en ? ram[addr_in] : 8'bZ;   
+
+
+endmodule
