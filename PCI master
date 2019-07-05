@@ -29,202 +29,330 @@
 
 
 
-module PCI_Master_Card (AD, CBE, PAR, FRM_LA, TRDY_LA, IRDY_LA, STOP_LA, DEVSEL_LA, IDSEL, PERR, SERR, REQ_LA, 
-GNT_LA, CLK, RST_LA, INTA_LA, INTB_LA, INTC_LA, INTD_LA, LOCK_LA);
+module PCI_Master_Card (AD, CBE, FRAME_LA, IRDY_LA, TRDY_LA, clk, RST_LA, DEVSEL_LA, state_m);
 
-input CLK;         //Standard PCI signals
-inout AD [31:0];
-output reg CBE [3:0];
-output PAR;
+input clk;         //Standard PCI signals
+inout [31:0] AD;
+output [3:0] CBE;
+//output PAR;
 output reg FRAME_LA = 1'b1;
-output TRDY_LA;
 output reg IRDY_LA = 1'b1;
-input STOP_LA;
-output DRVSEL_LA;
-output IDSEL;
-output PERR_LA;
-output SERR_LA;
-output REQ_LA;
-input GNT_LA;
+//output PERR_LA;
+//output SERR_LA;
+//input REQ_LA;
+//input GNT_LA;
 input RST_LA;
-input INTA_LA;
-input INTB_LA;
-input INTC_LA;
-input INTD_LA;
-output LOCK_LA;
+input TRDY_LA;
+input DEVSEL_LA;
 
-input reg [3:0] command;
-input reg [31:0] address;
-input reg [31:0] data;
-input reg [3:0] byteselect;
-
-parameter READ = 4'b0010;
-parameter WRITE = 4'b0011;
-
-parameter address_phase = 4'b0000;
-parameter device_select = 4'b0001;
-parameter cycle_identification = 4'b1010;
-parameter read_cycle = 4'b0011;
-parameter write_cycle = 4'b0100;
-parameter end_cycle = 4'b0101;
-
-reg state;
+//reg [3:0] command_reg;
+//reg [31:0] address_reg;
+//reg [31:0] data_reg;
+//reg [3:0] byteselect_reg;
+//wire DEVSEL_LA_reg;
+//wire TRDY_reg;
 
 
-always@(posedge CLK)
+parameter [3:0] initial_state = 4'b0000;
+parameter [3:0] write_state = 4'b0001;
+/*parameter [3:0] wait_state_2 = 4'b0011;*/
+parameter [3:0] end_cycle = 4'b0010;
+
+parameter [3:0] initial_state_r = 4'b1000;
+//parameter [3:0] IRDY_low_r = 4'b1001;
+parameter [3:0] read_state_r = 4'b1001;
+//parameter [3:0] wait_state_r = 4'b1011;
+//parameter [3:0] wait_state_2_r = 4'b1100;
+parameter [3:0] wait_state = 4'b1010;
+parameter [3:0] end_cycle_r = 4'b1011;
+
+output reg [3:0] state_m = initial_state;
+reg [31:0] AD_reg = 32'h0000_0237;
+reg [3:0] CBE_reg = 4'b0111;
+reg [1:0] counter = 2'b00;
+/*parameter [3:0]READ = 4'b0010;
+parameter [3:0]WRITE = 4'b0011;
+*/
+/*parameter [3:0]address_phase = 4'b0000;
+parameter [3:0]device_select = 4'b0001;
+parameter [3:0]cycle_identification = 4'b1010;
+parameter [3:0]read_cycle = 4'b0011;
+parameter [3:0]write_cycle = 4'b0100;
+parameter [3:0]end_cycle = 4'b0101;
+reg [3:0] state = address_phase;
+*/
+
+assign AD = ((FRAME_LA == 1'b0) && (TRDY_LA == 1'b1) && (IRDY_LA == 1'b1)) ? AD_reg [31:0] : 32'bZZZZ_ZZZZ;  //address
+assign CBE = ((FRAME_LA == 1'b0) && (TRDY_LA == 1'b1) && (IRDY_LA == 1'b1)) ? CBE_reg [3:0] : 4'bZ;  //command
+assign AD = ((DEVSEL_LA == 1'b0) && (TRDY_LA == 1'b0) && (IRDY_LA == 1'b0)) ? AD_reg [31:0] : 32'hZZZZ_ZZZZ;   // data:address
+assign CBE = ((IRDY_LA == 1'b0)) ? 4'b1111 : 4'bZ;  //byte-select
+assign CBE = ((FRAME_LA == 1'b1) && (TRDY_LA == 1'b1) && (IRDY_LA == 1'b1)) ? 4'bZ : 4'bZ;
+//assign AD = ((TRDY_LA == 1'b1) && (DEVSEL_LA == 1'b1) && (state_m == end_cycle)) ? 32'bZZZZ_ZZZZ : 32'h4689_5894;
+
+always@(posedge clk or negedge RST_LA)
 begin
+if (RST_LA==0)
+begin
+FRAME_LA <= 1'b1;
+IRDY_LA <= 1'b1;
+state_m <= initial_state;
+end
+else 
+begin
+state_m <= initial_state;
+case (state_m)
+  
+  initial_state:
+   begin
+	 AD_reg <= 32'h0000_0237+counter;
+	 CBE_reg <= 4'b0111;
+	 FRAME_LA <= 1'b0;
+	 state_m <= write_state;
+	end
+	
+	write_state:
+	begin
+	
+	IRDY_LA <= 1'b0;
+	AD_reg <= 32'h46895894+counter;
+	
+	if (DEVSEL_LA == 1'b0) 
+	begin
+	FRAME_LA <= 1'b1;
+	state_m <= end_cycle;
+	end
+	else
+	state_m <= write_state;
+	end
+	
+	end_cycle:
+	begin
+	IRDY_LA <= 1'b1;
+	if (counter<2'b11)
+	begin
+	counter <= counter+1;
+	AD_reg <= AD_reg+1;
+	state_m <= initial_state;
+	end
+	else
+	begin
+	counter<=2'b00;
+	state_m <= initial_state_r;
+	end
+	end
+	
+	initial_state_r:
+	begin
+	AD_reg <= 32'h0000_0237+counter;
+	CBE_reg <= 4'b0110;
+	if ((DEVSEL_LA==1) && (TRDY_LA==1))
+   begin
+	FRAME_LA <= 1'b0;
+	state_m <= read_state_r;
+	end
+	else
+	state_m <= initial_state_r;
+	end
+	read_state_r:
+	begin
+	IRDY_LA <= 1'b0;
+	AD_reg <= 32'hZ;
+	if ((IRDY_LA == 1'b0) && (DEVSEL_LA == 1'b0))
+	begin
+	AD_reg <= AD;
+	state_m <= wait_state;
+	end
+	else 
+	state_m <= read_state_r;
+	end
+	wait_state:
+	begin
+	FRAME_LA <= 1'b1;
+	state_m <= end_cycle_r;
+	end
+	end_cycle_r:
+	begin
+	IRDY_LA <=1'b1;
+	if (counter<2'b11)			//same counter register here
+	begin
+	counter <= counter+1;
+	AD_reg <= AD_reg+1;
+	state_m <= initial_state_r;
+	end
+	else	
+	state_m <= end_cycle_r;
+	end
+endcase
+end
+end
+endmodule
+	   //  Z:data
+
+
+/*begin
+//state <= address_phase;
 case (state)
 address_phase:
-
-if ((REQ_LA == 1'b1) && (GNT_LA == 1'b0) && (FRAME_LA ==1'b1))
 begin
-	FRAME_LA = 1'b0;
-	CBE = command;
-	AD = address;
-	state = device_select;
+if ((REQ_LA == 1'b1) && (GNT_LA == 1'b0) && (FRAME_LA_reg == 1'b1)) // devsel and trdy
+begin
+	FRAME_LA_reg <= 1'b0;
+	AD <= 32'h0000abcd;  
+	CBE <= 4'b0001;
+	state <= device_select;
 	end
 else
 	begin
-	command = command;
-	address = address;
-	state = address_phase;
+	command_reg = command;
+	address_reg = address;
+	state <= address_phase;
 	end
+end
 
 device_select:
-
-if (DEV_SEL == 1'b0)
+begin
+if (DEVSEL_LA_reg == 1'b0)
 	
-	state = cycle_identification;
-	
+	begin
+	 Irdy <= 1'b0;
+	 AD <= 32'h00000004;
+	 CBE <= 4'b0110;
+	state <= cycle_identification;
+	end
 else
 
-	state = device_select;
-	
-cycle_identification:
+	state <= device_select;
+end	
+cycle_identification: // acknowledement 
 
 if (command == 4'b0010)
 begin
-	state = read_cycle;
+	state <= read_cycle;
 	IRDY_LA = 1'b0;
 	end
 else if (command == 4'b0011)
 	begin
-	state = write_cycle;
+	state <= write_cycle;
 	IRDY_LA = 1'b0;
 	end
-else state = cycle_identification;
+else state <= cycle_identification;
 	
 read_cycle:
 	
-if ((IRDY_LA == 1'b1) && (DEVSEL_LA == 1'b0) && (TRDY_LA == 1'b0))
+if ((IRDY_LA == 1'b0) && (DEVSEL_LA_reg == 1'b0) && (TRDY_reg == 1'b0))
 	begin
-	data <= AD;					// Check parity here
-	byteselect <= CBE;
+	data_reg <= AD;					// Check parity here
+
 	
 	case (byteselect)
 	
 	4'b0000:
 	begin
-	data = 32'bZ;
+	data_reg <= 32'bZ;
 	end
 	
 	4'b0001:
 	begin
-	data = data [7:0];
+	data_reg <= data [31:0];
 	end
 	
 	4'b0010:
 	begin
-	data = data [15:8];
+	data_reg <= data [15:8];
 	end
 	
 	4'b0011:
 	begin
-	data = {data [15:8],data [7:0]};
+	data_reg <= {data [15:8],data [7:0]};
 	end
 	
 	4'b0100:
 	begin
-	data = data [23:16];
+	data_reg <= data [23:16];
 	end
 	
 	4'b0101:
 	begin
-	data = {data [23:16],data [7:0]};
+	data_reg <= {data [23:16],data [7:0]};
 	end
 	
 	4'b0110:
 	begin
-	data = {data [23:16],data [15:8]};
+	data_reg <= {data [23:16],data [15:8]};
 	end
 	
 	4'b0111:
 	begin
-	data = {data [23:16],data [15:8],data [7:0]};
+	data_reg <= {data [23:16],data [15:8],data [7:0]};
 	end
 	
 	4'b1000:
 	begin
-	data = data [31:24];
+	data_reg <= data [31:24];
 	end
 	
 	4'b1001:
 	begin
-	data<= {data [31:24],data [7:0]};
+	data_reg <= {data [31:24],data [7:0]};
 	end
 	
 	4'b1010:
 	begin
-	data<= {data [31:24],data [15:8]};
+	data_reg <= {data [31:24],data [15:8]};
 	end
 	
 	4'b1011:
 	begin
-	data<= {data [31:24],data [15:8],data [7:0]};
+	data_reg <= {data [31:24],data [15:8],data [7:0]};
 	end
 	
 	4'b1100:
 	begin
-	data<= {data [31:24],data [23:16]};
+	data_reg <= {data [31:24],data [23:16]};
 	end
 	
 	4'b1101:
 	begin
-	data<= {data [31:24],data [23:16],data [7:0]};
+	data_reg <= {data [31:24],data [23:16],data [7:0]};
 	end
 	
 	4'b1110:
 	begin
-	data [23:0]<= {data [31:24],data [23:16],data [15:8]};
+	data_reg [23:0]<= {data [31:24],data [23:16],data [15:8]};
 	end
 	
 	4'b1111:
 	begin
-	data<= {data [31:24],data [23:16],data [15:8],data [7:0]};
+	data_reg<= {data [31:24],data [23:16],data [15:8],data [7:0]};
 	end
 	endcase
 	end
 	
 	else
 	begin
-	data <= data;
+	data_reg <= data;
 	state <= read_cycle;
 	end
 
 write_cycle:
 begin
-	FRAME_LA = 1'b0;
-	AD = data;
-	CBE = byteselect;
+	FRAME_LA_reg <= 1'b0;
+end*/
 
-end
 
-end_cycle:
-	begin
-	FRAME_LA = 1'b1;
-	state = end_cycle;
-	end
-endcase
-end
-endmodule
+//assign CBE = ((REQ_LA == 1'b1) && (GNT_LA == 1'b0) && (FRAME_LA == 1'b0)&& (IRDY_LA == 1'b1)) ? command: 4'bZ;
+	
+/*
+assign CBE = ((state == read_cycle) && (IRDY_LA == 1'b0) && (DEVSEL_LA_reg == 1'b0) && (TRDY_reg == 1'b0)) ? byteselect_reg : 32'bZ;
+assign AD  = ((state == write_cycle) && (IRDY_LA == 1'b0) && (DEVSEL_LA_reg == 1'b0) && (TRDY_reg == 1'b0)) ? data_reg : 32'bZ;
+assign AD  = ((state == end_cycle) && (IRDY_LA == 1'b1) && (DEVSEL_LA_reg == 1'b1) && (TRDY_reg == 1'b1)) ? data_reg : 32'bZ; 
+assign CBE = ((state == write_cycle) && (IRDY_LA == 1'b1) && (DEVSEL_LA_reg == 1'b0) && (TRDY_reg == 1'b0)) ? byteselect_reg : 32'bZ;
+assign data_tb  = ((state == end_cycle) && (IRDY_LA == 1'b1) && (DEVSEL_LA_reg == 1'b1) && (TRDY_reg == 1'b1)) ? data_reg : 32'bZ; 
+assign FRAME_LA = FRAME_LA_reg;
+assign TRDY_reg = TRDY_LA;
+assign DEVSEL_LA_reg = DEVSEL_LA;*/
+
+	
+
+
 
