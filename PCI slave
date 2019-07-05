@@ -18,145 +18,148 @@
 // Additional Comments: 
 //
 //////////////////////////////////////////////////////////////////////////////////
-module PCI_Slave(AD, CBE, PAR, FRAME_LA, TRDY_LA, IRDY_LA, STOP_LA, DEVSEL_LA, IDSEL, PERR_LA, SERR_LA, CLK, RST_LA,
- INTA_LA, INTB_LA, INTC_LA, INTD_LA, LOCK_LA, DATA_OUT, MEM_ADRESS, PORT_EN, WRITE_EN);
+module PCI_Slave (AD, CBE, FRAME_LA, TRDY_LA, IRDY_LA, DEVSEL_LA, clk, RST_LA,
+ MEM_ADRESS, MEM_DATA, RAM_EN, WRITE_EN, OUT_EN, state_s);
 
-input CLK;              //Standard PCI signals
+input clk;              //Standard PCI signals
 inout [31:0] AD;
 input [3:0] CBE;
-output reg [31:0] DATA_OUT;   // Output from memory to the Master
-inout PAR;
-input FRAME_LA = 1'b1;
-output reg TRDY_LA;
+//input PAR;
+input FRAME_LA;
+output reg OUT_EN = 1'b0;
+output reg TRDY_LA = 1'b1;
 input IRDY_LA;
-output STOP_LA;
-output reg DEVSEL_LA;
-input IDSEL;
-inout PERR_LA;
-inout SERR_LA;
+output reg DEVSEL_LA = 1'b1;
+//input IDSEL;
+//input PERR_LA;
+//input SERR_LA;
 input RST_LA;
-output INTA_LA;
-output INTB_LA;
-output INTC_LA;
-output INTD_LA;
-input LOCK_LA;
 
 
 output reg [15:0] MEM_ADRESS;				//DPRAM Signals
-output reg PORT_EN;
-wire [31:0] MEM_DATA;
-output reg WRITE_EN;
+output reg RAM_EN = 1'b0;
+inout [31:0] MEM_DATA;
+output reg WRITE_EN = 1'b0;
 
-parameter [3:0] READ = 4'b0010;
-parameter [3:0] WRITE = 4'b0011;
+parameter [3:0] READ = 4'b0110;
+parameter [3:0] WRITE = 4'b0111;
 
 reg [31:0] address;
 reg [3:0] command;
 reg [31:0] data;
-reg [3:0] byteselect;
-reg [3:0] state = 4'b0001;
+/*reg [3:0] byteselect;
 reg read_reg = 1'b0;
+reg DEVSEL_LA_reg = 1'b1;*/
+output reg [3:0] state_s = initial_cycle;
 
-parameter [3:0] detect_cycle = 4'b0001;
+parameter [3:0] initial_cycle = 4'b0001;
 parameter [3:0] s_read_cycle = 4'b0010;
-parameter [3:0] s_write_cycle = 4'b0110;
-parameter [3:0] s_end_cycle = 4'b1100;
+parameter [3:0] s_write_cycle = 4'b0011;
+parameter [3:0] s_end_cycle = 4'b0100;
 
-always@(posedge CLK)
-	begin
-	
-	if (!FRAME_LA && IRDY_LA)
-	begin
-	command = CBE;
-	address = AD;
-	end
-	
-	else
-	begin
-	command = command;
-	address = address;
-	end
+//assign AD = ((IRDY_LA==1'b0)&&(FRAME_LA==1'b0)&&(command == READ))? MEM_DATA [31:0]: 32'hZZZZ_ZZZZ;
+//assign AD = ((IRDY_LA==1'b0)&&(FRAME_LA==1'b0)&&(command == READ))? MEM_DATA [31:0]: 32'hZZZZ_ZZZZ;
+assign MEM_DATA = ((TRDY_LA==1'b0)&&(DEVSEL_LA==1'b0) && (WRITE_EN == 1'b1)) ? data : 32'bZ;
+assign AD = ((IRDY_LA==1'b0) && (FRAME_LA==1'b0) && (command==READ) && (TRDY_LA==1'b0) ) ? MEM_DATA: 32'bZ;
 
-if (address<32'h0000_fffe && address>=32'h0000_0000)
-	DEVSEL_LA <= 1'b0;
-	
-	else
-	DEVSEL_LA <= 1'b1;
+
+always@(posedge clk or negedge RST_LA)
+begin
+if (RST_LA==0)
+begin
+TRDY_LA<=1'b1;
+DEVSEL_LA<=1'b1;
+RAM_EN<=1'b0;
+WRITE_EN<=1'b0;
+OUT_EN <= 1'b0;
+MEM_ADRESS <= 16'bZ;
+state_s <= initial_cycle;
 end
-
-always@(posedge CLK)
+else 
 begin
-case (state)
+state_s <= initial_cycle;
 
-detect_cycle:
-begin
-	if (!IRDY_LA)
+case (state_s)
+
+initial_cycle:
 	begin
-	MEM_ADRESS = address [15:0];
-	PORT_EN = 1'b1;
+		if ((FRAME_LA==1'b0) && (IRDY_LA==1'b1))
+		begin
+		command = CBE;
+		address = AD;
+			if (address<32'h0000_fffe)
+			begin
+			DEVSEL_LA = 1'b0;
+			MEM_ADRESS <= address [15:0];
+			RAM_EN <= 1'b1;
+				if (command == WRITE)
+				begin
+				WRITE_EN <= 1'b1;
+				TRDY_LA <=1'b0;
+				state_s <= s_write_cycle;
+				end
+				else if (command == READ)
+				begin
+				WRITE_EN <= 1'b0;
+				OUT_EN <= 1'b1;
+				state_s <= s_read_cycle;
+				end
+				else
+				state_s <= initial_cycle;
+			end
+			else
+			state_s <= initial_cycle;
+		end
+		else
+		state_s <= initial_cycle;
+		
 	end
 	
-	else
-	state <= detect_cycle;
-	
-	if (command == READ)
-	begin
-	WRITE_EN <= 1'b0;
-	byteselect = CBE;
-	state <= s_read_cycle;
-	end
-	
-	else if (command == WRITE)
-	begin
-	WRITE_EN <= 1'b1;
-	byteselect <= CBE;
-	state <= s_write_cycle;
-	end
-	
-	else
-	state <= detect_cycle;
-	end
 s_read_cycle:
 begin
-	if (MEM_DATA != 32'bZ)
+	if (FRAME_LA == 1'b0)
 	begin
 	TRDY_LA <= 1'b0;
-	state <= s_end_cycle;
+	data <= MEM_DATA;
+	state_s <= s_end_cycle;
 	end
-	
 	else
-	begin
-	state <= s_read_cycle;
-	end
+	state_s <= s_end_cycle;
 end
+
 s_write_cycle:
 begin
 	if (~IRDY_LA)
 	begin
 	data <= AD;
-	TRDY_LA <= 1'b0;
-	state <= s_end_cycle;
+	state_s <= s_end_cycle;
 	end
 	
 	else
-	state <= s_write_cycle;
+	begin
+	state_s <= s_write_cycle;
+end
 end
 
 s_end_cycle:
 begin
 	if (FRAME_LA)
 	begin
-	DATA_OUT <= 32'bZ;
-	TRDY_LA <= 1'bZ;
-	DEVSEL_LA <= 1'bZ;
+	TRDY_LA <= 1'b1;
+	DEVSEL_LA <= 1'b1;
+	WRITE_EN <= 1'b0;
+	RAM_EN <= 1'b0;
+	OUT_EN <= 1'b0;
+	MEM_ADRESS <= 16'hZ;
+	state_s <= initial_cycle;
 	end
 	else
 	begin
-	state <= s_end_cycle;
+	state_s <= s_end_cycle;
 	end
-	end
+end
 endcase
 end
-	assign AD = ((IRDY_LA==1'b0)&&(FRAME_LA==1'b0)&&(command == READ))? MEM_DATA[31:0]: 32'hZZZZ_ZZZZ;
-	 dual_port_ram r1 ( CLK, WRITE_EN, data[31:0], MEM_ADRESS, PORT_EN, MEM_DATA );
+end
+	
 endmodule
