@@ -16,32 +16,61 @@
 // Revision: 
 // Revision 0.01 - File Created
 // Additional Comments: 
-//
-//////////////////////////////////////////////////////////////////////////////////
-
-`timescale 1ns / 1ps
-
-module dual_port_ram 
-    (   input CLK, //clock
-        input wr_en,    //write enable for port 0
-        input [31:0] data_in,    //Input data to port 0.
-        input [15:0] addr_in,  //address for port 0
-        input port_en,    //enable port 0.
-        output [31:0] data_out    //output data from port 0.
-		  );
-
-//memory declaration.
-reg [31:0] ram[0:65534];
-
-//writing to the RAM
-always@(posedge CLK)
-begin
-    if(port_en == 1 && wr_en == 1)    //check enable signal and if write enable is ON
-        ram[addr_in] <= data_in;
-end
-
-//always reading from the ram, irrespective of clock.
-assign data_out = port_en ? ram[addr_in] : 8'bZ;   
 
 
-endmodule
+module single_port_ram (
+ clk         , // Clock Input
+ address     , // Address Input
+ ram_data        , // Data bi-directional
+ ram_en          , // Chip Select
+ wr_en          , // Write Enable/Read Enable
+ out_en            // Output Enable
+ ); 
+ 
+ parameter DATA_WIDTH = 32 ;
+ parameter ADDR_WIDTH = 16 ;
+ parameter RAM_DEPTH = 1 << ADDR_WIDTH;
+ 
+ //--------------Input Ports----------------------- 
+ input                  clk      ;
+ input [ADDR_WIDTH-1:0] address  ;
+ input                  ram_en   ;
+ input                  wr_en    ;
+ input                  out_en   ; 
+ 
+ //--------------Inout Ports----------------------- 
+ inout [DATA_WIDTH-1:0]  ram_data       ;
+ 
+ //--------------Internal variables---------------- 
+ reg [DATA_WIDTH-1:0] data_out ;
+ reg [DATA_WIDTH-1:0] mem [0:RAM_DEPTH-1];
+ reg                  oe_r;
+ 
+ //--------------Code Starts Here------------------ 
+ 
+ // Tri-State Buffer control 
+ // output : When we = 0, oe = 1, cs = 1
+ assign ram_data = (ram_en && out_en &&  ! wr_en) ? data_out : 32'bz; 
+ 
+ // Memory Write Block 
+ // Write Operation : When we = 1, cs = 1
+ always @ (posedge clk)
+ begin : MEM_WRITE
+    if (ram_en && wr_en) begin
+        mem[address] = ram_data;
+    end
+ end
+ 
+ // Memory Read Block 
+ // Read Operation : When we = 0, oe = 1, cs = 1
+ always @ (posedge clk)
+ begin : MEM_READ
+   if (ram_en && ! wr_en && out_en) begin
+     data_out = mem[address];
+     oe_r = 1;
+   end else begin
+     oe_r = 0;
+   end
+ end
+ 
+ endmodule
